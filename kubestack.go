@@ -17,27 +17,28 @@ limitations under the License.
 package main
 
 import (
-	"flag"
+	//"flag"
 	"fmt"
 	"os"
 
 	"github.com/hyperhq/kubestack/pkg/common"
-	"github.com/hyperhq/kubestack/pkg/kubestack"
+	//"github.com/hyperhq/kubestack/pkg/kubestack"
 )
 
 const (
 	VERSION = "0.5"
+	configFile = "/etc/kubestack/kubestack.conf"
 )
 
 func main() {
-	var (
+/*	var (
 		version    bool
 		configFile string
 		port       string
 	)
 
 	flag.BoolVar(&version, "version", false, "print version and exit")
-	flag.StringVar(&configFile, "conf", "/etc/kubestack.conf",
+	flag.StringVar(&configFile, "conf", "/etc/kubestack/kubestack.conf",
 		"openstack network controller configure file")
 	flag.StringVar(&port, "port", ":4237", "which port to listen on, e.g. 127.0.0.1:4237")
 
@@ -46,7 +47,7 @@ func main() {
 	if version {
 		fmt.Printf("kubestack version: %s\n", VERSION)
 		os.Exit(0)
-	}
+	}*/
 
 	config, err := os.Open(configFile)
 	if err != nil {
@@ -61,6 +62,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	server := kubestack.NewKubeHandler(openstack)
-	fmt.Println(server.Serve(port))
+//	server := kubestack.NewKubeHandler(openstack)
+//	fmt.Println(server.Serve(port))
+	err = openstack.CreateNetworkForTest()
+	if err != nil {
+		fmt.Printf("create network failed: %v\n", err)
+	}
 }

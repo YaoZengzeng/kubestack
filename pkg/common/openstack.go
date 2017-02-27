@@ -181,7 +181,7 @@ func NewOpenStack(config io.Reader) (*OpenStack, error) {
 	}
 
 	// init plugin
-	if cfg.Plugin.PluginName != "" {
+/*	if cfg.Plugin.PluginName != "" {
 		integrationBriage := "br-int"
 		if cfg.Plugin.IntegrationBridge != "" {
 			integrationBriage = cfg.Plugin.IntegrationBridge
@@ -192,7 +192,7 @@ func NewOpenStack(config io.Reader) (*OpenStack, error) {
 			plugin.Init(integrationBriage)
 			os.Plugin = plugin
 		}
-	}
+	}*/
 
 	return &os, nil
 }
@@ -327,6 +327,21 @@ func (os *OpenStack) ToProviderStatus(status string) string {
 	}
 
 	return "Failed"
+}
+
+// Create network for test
+func (os *OpenStack) CreateNetworkForTest() error {
+	opts := networks.CreateOpts{
+		Name:		"abc",
+		TenantID:	os.ToTenantID("admin"),
+	}
+	_, err := networks.Create(os.network, opts).Extract()
+	if err != nil {
+		glog.Errorf("Create openstack network abc failed: %v", err)
+		return err		
+	}
+
+	return nil
 }
 
 // Create network
