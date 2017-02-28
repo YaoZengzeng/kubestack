@@ -22,6 +22,7 @@ import (
 	"os"
 
 	"github.com/hyperhq/kubestack/pkg/common"
+	provider "github.com/hyperhq/kubestack/pkg/types"
 	//"github.com/hyperhq/kubestack/pkg/kubestack"
 )
 
@@ -62,10 +63,21 @@ func main() {
 		os.Exit(1)
 	}
 
+	network := &provider.Network{}
+	network.Name = "abc"
+	network.TenantID = openstack.ToTenantID("admin")
+
 //	server := kubestack.NewKubeHandler(openstack)
 //	fmt.Println(server.Serve(port))
-	err = openstack.CreateNetworkForTest()
+	err = openstack.CreateNetworkForTest(network)
 	if err != nil {
 		fmt.Printf("create network failed: %v\n", err)
+	}
+
+	podname := "podabc"
+	namespace := "namespaceabc"
+	err = openstack.SetupPodForTest(podname, namespace, network)
+	if err != nil {
+		fmt.Printf("setup interface failed: %v\n", err)
 	}
 }

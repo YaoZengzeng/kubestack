@@ -330,10 +330,7 @@ func (os *OpenStack) ToProviderStatus(status string) string {
 }
 
 // Create network for test
-func (os *OpenStack) CreateNetworkForTest() error {
-	network := &provider.Network{}
-	network.Name = "abc"
-	network.TenantID = os.ToTenantID("admin")
+func (os *OpenStack) CreateNetworkForTest(network *provider.Network) error {
 	opts := networks.CreateOpts{
 		Name:     network.Name,
 		TenantID: network.TenantID,
@@ -713,7 +710,7 @@ func (os *OpenStack) CreatePort(networkID, tenantID, portName, podHostname strin
 
 	opts := portsbinding.CreateOpts{
 		HostID:  getHostName(),
-		DNSName: podHostname,
+		//DNSName: podHostname,
 		CreateOptsBuilder: ports.CreateOpts{
 			NetworkID:      networkID,
 			Name:           portName,
@@ -732,7 +729,7 @@ func (os *OpenStack) CreatePort(networkID, tenantID, portName, podHostname strin
 	}
 
 	// Update dns_name in order to make sure it is correct
-	updateOpts := portsbinding.UpdateOpts{
+/*	updateOpts := portsbinding.UpdateOpts{
 		DNSName: podHostname,
 	}
 	_, err = portsbinding.Update(os.network, port.ID, updateOpts).Extract()
@@ -740,7 +737,7 @@ func (os *OpenStack) CreatePort(networkID, tenantID, portName, podHostname strin
 		ports.Delete(os.network, port.ID)
 		glog.Errorf("Update port %s failed: %v", portName, err)
 		return nil, err
-	}
+	}*/
 
 	return port, nil
 }
@@ -1407,6 +1404,92 @@ func (os *OpenStack) CheckTenantID(tenantID string) (bool, error) {
 func (os *OpenStack) BuildPortName(podName, namespace, networkID string) string {
 	return podNamePrefix + "_" + podName + "_" + namespace + "_" + networkID
 }
+
+// Setup pod for test
+func (os *OpenStack) SetupPodForTest(podName, namespace string, network *provider.Network) error {
+	portName := os.BuildPortName(podName, namespace, network.Uid)
+
+	// get dns server ips
+	dnsServers := make([]string, 0, 1)
+	networkPorts, err := os.ListPorts(network.Uid, "network:dhcp")
+	if err != nil {
+		glog.Errorf("Query dhcp ports failed: %v", err)
+		return err
+	}
+	for _, p := range networkPorts {
+		dnsServers = append(dnsServers, p.FixedIPs[0].IPAddress)
+	}
+
+	// get port from openstack; if port doesn't exist, create a new one
+	port, err := os.GetPort(portName)
+	if err == ErrNotFound || port == nil {
+/*		podHostname := strings.Split(podName, "_")[0]
+		if len(podHostname) > hostnameMaxLen {
+			podHostname = podHostname[:hostnameMaxLen]
+		}*/
+		// directly get it temporarily
+		podHostname := ""
+
+		// Port not found, create one
+		portWithBinding, err := os.CreatePort(network.Uid, network.TenantID, portName, podHostname)
+		if err != nil {
+			glog.Errorf("CreatePort failed: %v", err)
+			return err
+		}
+		port = &portWithBinding.Port
+	} else if err != nil {
+		glog.Errorf("GetPort failed: %v", err)
+		return err
+	}
+
+/*	deviceOwner := fmt.Sprintf("compute:%s", getHostName())
+	if port.DeviceOwner != deviceOwner {
+		// Update hostname in order to make sure it is correct
+		updateOpts := portsbinding.UpdateOpts{
+			HostID: getHostName(),
+			UpdateOptsBuilder: ports.UpdateOpts{
+				DeviceOwner: deviceOwner,
+			},
+		}
+		_, err = portsbinding.Update(os.network, port.ID, updateOpts).Extract()
+		if err != nil {
+			ports.Delete(os.network, port.ID)
+			glog.Errorf("Update port %s failed: %v", portName, err)
+			return err
+		}
+	}*/
+
+	//glog.V(4).Infof("Pod %s's port is %v", podName, port)
+	glog.Infof("Pod %s's port is %v", podName, port)
+
+	// get subnet and gateway
+	subnet, err := os.getProviderSubnet(port.FixedIPs[0].SubnetID)
+	if err != nil {
+		glog.Errorf("Get info of subnet %s failed: %v", port.FixedIPs[0].SubnetID, err)
+		if nil != ports.Delete(os.network, port.ID).ExtractErr() {
+			glog.Warningf("Delete port %s failed", port.ID)
+		}
+		return err
+	}
+
+	// setup interface for pod
+	_, cidr, _ := net.ParseCIDR(subnet.Cidr)
+	prefixSize, _ := cidr.Mask.Size()
+	glog.Infof("port's cidr ip is %s/%d\n", port.FixedIPs[0].IPAddress, prefixSize)
+/*	err = os.Plugin.SetupInterface(podName+"_"+namespace, podInfraContainerID, port,
+		fmt.Sprintf("%s/%d", port.FixedIPs[0].IPAddress, prefixSize),
+		subnet.Gateway, dnsServers, containerRuntime)
+	if err != nil {
+		glog.Errorf("SetupInterface failed: %v", err)
+		if nil != ports.Delete(os.network, port.ID).ExtractErr() {
+			glog.Warningf("Delete port %s failed", port.ID)
+		}
+		return err
+	}*/
+
+	return nil
+}
+
 
 // Setup pod
 func (os *OpenStack) SetupPod(podName, namespace, podInfraContainerID string, network *provider.Network, containerRuntime string) error {
