@@ -181,7 +181,7 @@ func NewOpenStack(config io.Reader) (*OpenStack, error) {
 	}
 
 	// init plugin
-/*	if cfg.Plugin.PluginName != "" {
+	/*	if cfg.Plugin.PluginName != "" {
 		integrationBriage := "br-int"
 		if cfg.Plugin.IntegrationBridge != "" {
 			integrationBriage = cfg.Plugin.IntegrationBridge
@@ -331,14 +331,75 @@ func (os *OpenStack) ToProviderStatus(status string) string {
 
 // Create network for test
 func (os *OpenStack) CreateNetworkForTest() error {
+	network := &provider.Network{}
+	network.Name = "abc"
+	network.TenantID = os.ToTenantID("admin")
 	opts := networks.CreateOpts{
-		Name:		"abc",
-		TenantID:	os.ToTenantID("admin"),
+		Name:     network.Name,
+		TenantID: network.TenantID,
 	}
-	_, err := networks.Create(os.network, opts).Extract()
+	osNet, err := networks.Create(os.network, opts).Extract()
 	if err != nil {
 		glog.Errorf("Create openstack network abc failed: %v", err)
-		return err		
+		return err
+	}
+
+	// create router
+	routerOpts := routers.CreateOpts{
+		Name:        network.Name,
+		TenantID:    network.TenantID,
+		GatewayInfo: &routers.GatewayInfo{NetworkID: os.ExtNetID},
+	}
+	osRouter, err := routers.Create(os.network, routerOpts).Extract()
+	if err != nil {
+		glog.Errorf("Create openstack router %s failed: %v", network.Name, err)
+		delErr := os.DeleteNetwork(network.Name)
+		if delErr != nil {
+			glog.Errorf("Delete openstack network %s failed: %v", network.Name, delErr)
+		}
+		return err
+	}
+
+	// create subnets and connect them to router
+	networkID := osNet.ID
+	network.Status = os.ToProviderStatus(osNet.Status)
+	network.Uid = osNet.ID
+	sub := &provider.Subnet{
+		Name:    "abc-sub",
+		Cidr:    "192.168.1.0/24",
+		Gateway: "192.168.1.1",
+	}
+	subnetOpts := subnets.CreateOpts{
+		NetworkID: networkID,
+		CIDR:      sub.Cidr,
+		Name:      sub.Name,
+		IPVersion: gophercloud.IPv4,
+		TenantID:  network.TenantID,
+		GatewayIP: &sub.Gateway,
+		//	DNSNameservers:	sub.Dnsservers,
+	}
+	s, err := subnets.Create(os.network, subnetOpts).Extract()
+	if err != nil {
+		glog.Errorf("Create openstack subnet %s failed: %v", sub.Name, err)
+		delErr := os.DeleteNetwork(network.Name)
+		if delErr != nil {
+			glog.Errorf("Delete openstack network %s failed: %v", network.Name, delErr)
+		}
+		return err
+	}
+
+	// add subnet to router
+	addOpts := routers.AddInterfaceOpts{
+		SubnetID: s.ID,
+	}
+	_, err = routers.AddInterface(os.network, osRouter.ID, addOpts).Extract()
+	if err != nil {
+		glog.Errorf("Create openstack subnet %s failed: %v", sub.Name, err)
+		delErr := os.DeleteNetwork(network.Name)
+		if delErr != nil {
+			glog.Errorf("Delete openstack network %s failed: %v", network.Name, delErr)
+		}
+		return err
 	}
 
 	return nil
